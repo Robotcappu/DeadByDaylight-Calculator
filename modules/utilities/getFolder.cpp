@@ -1,5 +1,5 @@
 // GetFolder.cpp
-#include "GetFolder.h"
+#include "getFolder.h"
 #include "modules/core/Logger.h"
 #include <windows.h>
 #include <shobjidl.h>
@@ -7,14 +7,14 @@
 
 namespace fs = std::filesystem;
 
-namespace GetFolder
+namespace getFolder
 {
     std::string openDialog()
     {
         Logger::instance().log(LogLevel::LOG_DEBUG, LogCategory::LOG_GENERAL, "Öffne Ordnerauswahl-Dialog", __func__, __FILE__, __LINE__);
 
         std::string folderPath;
-        IFileDialog* fileDialog = nullptr;
+        IFileDialog *fileDialog = nullptr;
 
         if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_PPV_ARGS(&fileDialog))))
         {
@@ -24,7 +24,7 @@ namespace GetFolder
 
             if (SUCCEEDED(fileDialog->Show(NULL)))
             {
-                IShellItem* item;
+                IShellItem *item;
                 if (SUCCEEDED(fileDialog->GetResult(&item)))
                 {
                     PWSTR path = nullptr;
@@ -50,29 +50,42 @@ namespace GetFolder
         return folderPath;
     }
 
-    bool isValidDirectory(const std::string& path)
+    bool isValidDirectory(const std::string &path)
     {
         bool valid = fs::exists(path) && fs::is_directory(path);
         Logger::instance().log(valid ? LogLevel::LOG_DEBUG : LogLevel::LOG_WARNING,
-            LogCategory::LOG_GENERAL,
-            (valid ? "Pfad ist gültiger Ordner: " : "Ungültiger Ordnerpfad: ") + path,
-            __func__, __FILE__, __LINE__);
+                               LogCategory::LOG_GENERAL,
+                               (valid ? "Pfad ist gültiger Ordner: " : "Ungültiger Ordnerpfad: ") + path,
+                               __func__, __FILE__, __LINE__);
         return valid;
     }
 
-    bool isFilePath(const std::string& path)
+    bool isFilePath(const std::string &path)
     {
         bool isFile = fs::exists(path) && fs::is_regular_file(path);
         Logger::instance().log(LogLevel::LOG_DEBUG, LogCategory::LOG_GENERAL,
-            (isFile ? "Pfad ist Datei: " : "Pfad ist keine Datei: ") + path,
-            __func__, __FILE__, __LINE__);
+                               (isFile ? "Pfad ist Datei: " : "Pfad ist keine Datei: ") + path,
+                               __func__, __FILE__, __LINE__);
         return isFile;
     }
 
-    std::string getContainingFolder(const std::string& filePath)
+    std::string getContainingFolder(const std::string &filePath)
     {
         std::string folder = fs::path(filePath).parent_path().string();
         Logger::instance().log(LogLevel::LOG_DEBUG, LogCategory::LOG_GENERAL, "Übergeordneter Ordner: " + folder, __func__, __FILE__, __LINE__);
         return folder;
     }
-} // namespace GetFolder
+
+    size_t getTotalSizeOfFolder(const std::string &path)
+    {
+        size_t totalSize = 0;
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(path))
+        {
+            if (entry.is_regular_file())
+            {
+                totalSize += entry.file_size();
+            }
+        }
+        return totalSize;
+    }
+}

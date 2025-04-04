@@ -1,9 +1,9 @@
-// GetFolder.h
+// getFolder.h
 #pragma once
 
 #include <string>
 
-namespace GetFolder
+namespace getFolder
 {
     // Öffnet einen Dialog zur Auswahl eines Ordners
     // Gibt leeren String zurück bei Abbruch
@@ -17,4 +17,6 @@ namespace GetFolder
 
     // Gibt den übergeordneten Ordner einer Datei zurück
     std::string getContainingFolder(const std::string& filePath);
-} // namespace GetFolder
+
+    size_t getTotalSizeOfFolder(const std::string& path);
+}

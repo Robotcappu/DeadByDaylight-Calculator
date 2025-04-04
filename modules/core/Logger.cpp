@@ -20,7 +20,7 @@ Logger::Logger() {
             throw std::runtime_error("APPDATA konnte nicht gefunden werden");
         }
 
-        std::string logDir = std::string(appDataPath) + "\\UtilsApp\\logs\\";
+        std::string logDir = std::string(appDataPath) + "\\Bloodpoints Calculator\\logs\\";
         std::filesystem::create_directories(logDir); // Ordnerstruktur anlegen
 
         // Timestamp als Dateiname

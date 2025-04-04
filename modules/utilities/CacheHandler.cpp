@@ -15,7 +15,7 @@ namespace CacheHandler
         const char* appData = std::getenv("APPDATA");
         if (appData)
         {
-            std::string basePath = std::string(appData) + "\\UtilsApp\\cache";
+            std::string basePath = std::string(appData) + "\\Bloodpoints Calculator\\cache";
             fs::create_directories(basePath);
             return basePath;
         }

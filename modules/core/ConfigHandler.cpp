@@ -2,12 +2,13 @@
 #include <fstream>
 #include <cstdlib>
 #ifdef _WIN32
-#include <direct.h>   // _mkdir
+#include <direct.h>
 #include <sys/stat.h>
+#include <filesystem>
 #endif
 
 #ifdef _WIN32
-// Hilfsfunktion: Prüft, ob ein Verzeichnis existiert.
+// Checks for directory existence on Windows
 static bool directoryExists(const std::string& dirName)
 {
     struct _stat info;
@@ -19,39 +20,37 @@ static bool directoryExists(const std::string& dirName)
 
 ConfigHandler::ConfigHandler(const std::string& configFileName)
 {
-#ifdef _WIN32
-    // Hole den APPDATA-Pfad aus der Umgebungsvariable
-    const char* appData = std::getenv("APPDATA");
-    if (appData)
+    try
     {
-        std::string appDataPath(appData);
-        std::string dir = appDataPath + "\\UtilsApp";
-        // Falls der Ordner nicht existiert, erstellen
-        if (!directoryExists(dir))
-        {
-            _mkdir(dir.c_str());
-        }
-        // Setze den Pfad zur Konfigurationsdatei im UtilsApp-Ordner
-        path = dir + "\\" + configFileName;
-    }
-    else
-    {
-        // Fallback: Benutze den übergebenen Dateinamen
-        path = configFileName;
-    }
-#else
-    // Auf anderen Plattformen einfach den übergebenen Pfad verwenden
-    path = configFileName;
-#endif
+        std::filesystem::path exePath = std::filesystem::current_path();
+        
+        std::filesystem::path configDir = exePath / "Bloodpoints Calculator";
 
-    // Falls die Datei nicht existiert, lege ein Default-JSON-Objekt an und speichere es
-    std::ifstream testFile(path);
-    if (!testFile.good())
+        // create Folder if Folder does not exist
+        if (!std::filesystem::exists(configDir))
+        {
+            std::filesystem::create_directories(configDir);
+        }
+
+        path = (configDir / configFileName).string();
+
+        // default json if json des not exist
+        std::ifstream testFile(path);
+        if (!testFile.good())
+        {
+            configData = nlohmann::json::object();
+            save();
+        }
+    }
+    catch (const std::exception& e)
     {
-        configData = nlohmann::json::object();  // Leere Default-Konfiguration
+        // Fallback
+        path = configFileName;
+        configData = nlohmann::json::object();
         save();
     }
 }
+
 
 bool ConfigHandler::load()
 {

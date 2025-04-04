@@ -18,22 +18,10 @@
 #include "Globals.h"
 #include "modules/settings/Theme.h"
 #include "modules/settings/ThemeManager.h"
-#include "modules/cleaners/FindDuplicates.h"
-#include "modules/cleaners/FindFiles.h"
 #include "modules/utilities/PopupHandler.h"
 #include "modules/utilities/CacheHandler.h"
 #include "modules/core/Logger.h"
-#include "modules/utilities/GetFolder.h"
-
-static char folderPath[260] = "C:";
-static size_t minSizeMB = 100;
-static std::vector<DuplicateGroup> duplicates;
-static std::vector<LargeFileEntry> largeFiles;
-static std::unordered_set<std::string> filesToDelete;
-
-static std::future<std::pair<std::vector<DuplicateGroup>, std::vector<LargeFileEntry>>> scanFuture;
-static bool scanInProgress = false;
-static std::string scanError;
+#include "modules/utilities/getFolder.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND window,
@@ -307,257 +295,32 @@ void gui::Render() noexcept
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize({currentWidth, currentHeight});
-    ImGui::Begin("Utils", &exit, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Bloodpoints Calculator", &exit, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
     if (ImGui::BeginTabBar("MainTabBar"))
     {
         // General Menu Information
         if (ImGui::BeginTabItem("Menu"))
         {
-            ImGui::Separator();
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Cleanup"))
+        if (ImGui::BeginTabItem("Survivor"))
         {
-            static bool deleteInProgress = false;
-            static float deleteProgress = 0.0f;
-            static size_t totalToDelete = 0;
-            static size_t deletedCount = 0;
-
-            ImGui::Text("Scan einen Ordner nach doppelten Dateien");
-            ImGui::PushItemWidth(260);
-            ImGui::InputText("##FolderInput", folderPath, IM_ARRAYSIZE(folderPath));
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            if (ImGui::Button("Ordner wählen"))
-            {
-                std::string selected = GetFolder::openDialog();
-                if (!selected.empty())
-                {
-                    strncpy(folderPath, selected.c_str(), IM_ARRAYSIZE(folderPath));
-                }
-            }
-
-            ImGui::InputScalar("Min. Größe (MB)", ImGuiDataType_U64, &minSizeMB);
-
-            if (!scanInProgress && ImGui::Button("Scan starten"))
-            {
-                scanInProgress = true;
-                scanError.clear();
-                filesToDelete.clear();
-
-                std::string folder(folderPath);
-                size_t minSize = minSizeMB;
-
-                Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CLEANING, "Thread-Scan gestartet für: " + folder, __func__, __FILE__, __LINE__);
-
-                std::thread([](std::string folderCopy, size_t minSizeCopy)
-                            {
-            try
-            {
-                auto dups = FindDuplicates::findInFolder(folderCopy);
-                auto large = FindFiles::findLargeFiles(folderCopy, minSizeCopy * 1024 * 1024);
-
-                duplicates = std::move(dups);
-                largeFiles = std::move(large);
-
-                Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CLEANING,
-                    "Thread-Scan abgeschlossen. Duplikate: " + std::to_string(duplicates.size()) +
-                    ", Große Dateien: " + std::to_string(largeFiles.size()), __func__, __FILE__, __LINE__);
-            }
-            catch (const std::exception& e)
-            {
-                scanError = e.what();
-                Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_SYSTEM,
-                    "Thread-Scan Fehler: " + scanError, __func__, __FILE__, __LINE__);
-            }
-
-            scanInProgress = false; }, folder, minSize)
-                    .detach();
-            }
-
-            if (scanInProgress && scanFuture.valid())
-            {
-                if (scanFuture.wait_for(std::chrono::milliseconds(10)) == std::future_status::ready)
-                {
-                    try
-                    {
-                        auto result = scanFuture.get();
-                        duplicates = std::move(result.first);
-                        largeFiles = std::move(result.second);
-                        Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CLEANING,
-                                               "Async-Scan abgeschlossen. Duplikate: " + std::to_string(duplicates.size()) +
-                                                   ", Große Dateien: " + std::to_string(largeFiles.size()),
-                                               __func__, __FILE__, __LINE__);
-                    }
-                    catch (const std::exception &e)
-                    {
-                        scanError = e.what();
-                        Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_SYSTEM, "Async-Scan Fehler: " + scanError, __func__, __FILE__, __LINE__);
-                    }
-                    scanInProgress = false;
-                }
-                else
-                {
-                    ImGui::Text("🔄 Scan läuft...");
-                }
-            }
-
-            if (!scanError.empty())
-            {
-                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Fehler beim Scan: %s", scanError.c_str());
-            }
-
-            ImGui::Separator();
-            ImGui::Text("Bitte wähle die Dateien aus die du behalten möchtest");
-            ImGui::Text("");
-            ImGui::Text("Doppelte Dateien: %zu", duplicates.size());
-            ImGui::BeginChild("DuplicatesList", ImVec2(0, 150), true);
-
-            for (size_t i = 0; i < duplicates.size(); ++i)
-            {
-                const auto &group = duplicates[i];
-                ImGui::Text("%zu) Duplikat-Gruppe:", i + 1);
-
-                // Finde den aktuell ausgewählten Index für diese Gruppe
-                int selectedIndex = -1;
-                for (size_t j = 0; j < group.paths.size(); ++j)
-                {
-                    if (filesToDelete.count(group.paths[j]) > 0)
-                    {
-                        selectedIndex = static_cast<int>(j);
-                        break;
-                    }
-                }
-
-                // Falls keiner gesetzt ist, setze standardmäßig die erste Datei
-                if (selectedIndex == -1 && !group.paths.empty())
-                {
-                    selectedIndex = 0;
-                    filesToDelete.insert(group.paths[0]);
-                }
-
-                // Zeichne die Checkboxen
-                for (size_t j = 0; j < group.paths.size(); ++j)
-                {
-                    const std::string &path = group.paths[j];
-                    std::string filename = std::filesystem::path(path).filename().string();
-                    std::string checkboxID = "##dup_" + std::to_string(i) + "_" + std::to_string(j);
-
-                    bool checked = (selectedIndex == static_cast<int>(j));
-
-                    if (ImGui::Checkbox((filename + checkboxID).c_str(), &checked))
-                    {
-                        // Wenn der Benutzer was auswählt, alle anderen aus der Gruppe entfernen
-                        for (size_t k = 0; k < group.paths.size(); ++k)
-                        {
-                            filesToDelete.erase(group.paths[k]);
-                        }
-
-                        // Und den neuen Eintrag setzen
-                        filesToDelete.insert(path);
-                        selectedIndex = static_cast<int>(j);
-                    }
-                }
-
-                ImGui::Separator();
-            }
-
-            ImGui::EndChild();
-
-            ImGui::Text("");
-            ImGui::Text("Große Dateien:");
-            ImGui::BeginChild("LargeFilesList", ImVec2(0, 150), true);
-            for (const auto &file : largeFiles)
-            {
-                // Nur den Dateinamen anzeigen, nicht den kompletten Pfad
-                std::string filename = std::filesystem::path(file.path).filename().string();
-                float fileSizeMB = static_cast<float>(file.size) / (1024 * 1024); // Umrechnung in MB
-
-                std::string label;
-                if (fileSizeMB >= 1024) // Ab 1GB
-                {
-                    // Runde auf eine Nachkommastelle
-                    std::ostringstream oss;
-                    oss << std::fixed << std::setprecision(1) << (fileSizeMB / 1024);
-                    label = filename + " (" + oss.str() + " GB)";
-                }
-                else
-                {
-                    // Zeige MB ohne Dezimalstellen
-                    label = filename + " (" + std::to_string(static_cast<int>(fileSizeMB)) + " MB)";
-                }
-
-                ImGui::Selectable(label.c_str());
-
-                bool checked = filesToDelete.count(file.path) > 0;
-                if (ImGui::Checkbox(("##" + file.path).c_str(), &checked))
-                {
-                    if (checked)
-                        filesToDelete.insert(file.path);
-                    else
-                        filesToDelete.erase(file.path);
-                }
-            }
-            ImGui::EndChild();
-
-            if (deleteInProgress)
-            {
-                ImGui::Text("Lösche Dateien...");
-                ImGui::ProgressBar(deleteProgress, ImVec2(-1, 0), "");
-            }
-
-            if (!deleteInProgress && ImGui::Button("Auswahl löschen"))
-            {
-                PopupHandler::openConfirmationPopup("deleteSelected", "Möchtest du die markierten Dateien wirklich löschen?", [](bool confirmed)
-                                                    {
-            if (confirmed)
-            {
-                deleteInProgress = true;
-                deleteProgress = 0.0f;
-                deletedCount = 0;
-                totalToDelete = filesToDelete.size();
-
-                std::thread([]()
-                {
-                    size_t index = 0;
-                    for (const auto& path : filesToDelete)
-                    {
-                        try
-                        {
-                            if (std::filesystem::remove(path))
-                            {
-                                Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_FILES, "Datei gelöscht: " + path, __func__, __FILE__, __LINE__);
-                            }
-                        }
-                        catch (const std::exception& e)
-                        {
-                            Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_FILES, "Fehler beim Löschen: " + path + " - " + e.what(), __func__, __FILE__, __LINE__);
-                        }
-
-                        deletedCount++;
-                        deleteProgress = static_cast<float>(deletedCount) / static_cast<float>(totalToDelete);
-                    }
-
-                    filesToDelete.clear();
-                    duplicates.clear();
-                    largeFiles.clear();
-                    deleteInProgress = false;
-                }).detach();
-            } });
-            }
-
-            PopupHandler::render();
+            
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Einstellungen"))
+        if (ImGui::BeginTabItem("Killer"))
+        {
+            
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Settings"))
         {
             if (ImGui::CollapsingHeader("Templates"))
             {
-                ImGui::Text("Templates");
-
                 static std::vector<std::string> allThemes;
                 static int selectedThemeIndex = -1;
                 static char newThemeName[32] = "";
@@ -625,7 +388,7 @@ void gui::Render() noexcept
                     {
                         gThemeManager->deleteTheme(allThemes[selectedThemeIndex]);
                         RefreshThemeList();
-                        selectedThemeIndex = std::min(1, static_cast<int>(allThemes.size()) - 1);
+                        selectedThemeIndex = (std::min)(1, static_cast<int>(allThemes.size()) - 1);
                     }
                 }
 

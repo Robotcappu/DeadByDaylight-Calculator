@@ -9,8 +9,8 @@ BuiltinTheme ThemeManager::builtinThemeFromName(const std::string &name) const
         return BuiltinTheme::Light;
     if (name == "Dark")
         return BuiltinTheme::Dark;
-    if (name == "Blue")
-        return BuiltinTheme::Blue;
+    if (name == "DbD")
+        return BuiltinTheme::DbD;
     return BuiltinTheme::Dark; // Fallback
 }
 
@@ -71,7 +71,7 @@ void ThemeManager::applyTheme(const std::string &themeName)
 
 bool ThemeManager::isBuiltinTheme(const std::string &themeName) const
 {
-    static const std::vector<std::string> builtinNames = {"Light", "Dark", "Blue", "Neon"};
+    static const std::vector<std::string> builtinNames = {"Light", "Dark", "DbD"};
     return std::find(builtinNames.begin(), builtinNames.end(), themeName) != builtinNames.end();
 }
 
@@ -86,16 +86,10 @@ void ThemeManager::applyBuiltinTheme(BuiltinTheme theme)
     case BuiltinTheme::Dark:
         ImGui::StyleColorsDark();
         break;
-    case BuiltinTheme::Blue:
-        for (size_t i = 0; i < BlueThemeColorCount; ++i)
+    case BuiltinTheme::DbD:
+        for (size_t i = 0; i < DbDThemeColorCount; ++i)
         {
-            style.Colors[BlueThemeColors[i].index] = BlueThemeColors[i].color;
-        }
-        break;
-    case BuiltinTheme::Neon:
-        for (size_t i = 0; i < NeonThemeColorCount; ++i)
-        {
-            style.Colors[NeonThemeColors[i].index] = NeonThemeColors[i].color;
+            style.Colors[DbDThemeColors[i].index] = DbDThemeColors[i].color;
         }
         break;
     }
@@ -212,7 +206,7 @@ std::vector<std::string> ThemeManager::getCustomThemeNames() const
 void ThemeManager::setCurrentTheme(const std::string &themeName)
 {
     if (!config["Themes"].contains(themeName) &&
-        (themeName == "Light" || themeName == "Dark" || themeName == "Blue" || themeName == "Neon"))
+        (themeName == "Light" || themeName == "Dark" || themeName == "DbD"))
     {
         config["Themes"][themeName] = {{"type", "builtin"}};
     }
@@ -321,7 +315,7 @@ void ThemeManager::saveCurrentThemeAs(const std::string &themeName)
 void ThemeManager::ensureDefaultConfig()
 {
     config = nlohmann::json{
-        {"Themes", {{"Light", {{"type", "builtin"}}}, {"Dark", {{"type", "builtin"}}}, {"Blue", {{"type", "builtin"}}}, {"Neon", {{"type", "builtin"}}}}},
+        {"Themes", {{"Light", {{"type", "builtin"}}}, {"Dark", {{"type", "builtin"}}}, {"DbD", {{"type", "builtin"}}}}},
         {"CurrentTheme", "Dark"}};
     configHandler.setConfig(config);
     configHandler.save();

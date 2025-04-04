@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Util)
+project(Bloodpoints_Calculator)
 
 # C++ Standard setzen
 set(CMAKE_CXX_STANDARD 17)
@@ -35,8 +35,6 @@ file(GLOB_RECURSE SOURCES
 add_executable(${PROJECT_NAME}
     main.cpp
     gui.cpp
-    modules/cleaners/FindDuplicates.cpp
-    modules/cleaners/FindFiles.cpp
     modules/core/Logger.cpp
     modules/core/ConfigHandler.cpp
     modules/settings/Theme.cpp

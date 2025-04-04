@@ -12,19 +12,11 @@ void SetTheme(Theme theme)
     case Theme::Dark:
         ImGui::StyleColorsDark();
         break;
-    case Theme::Blue:
+    case Theme::DbD:
     {
-        for (size_t i = 0; i < BlueThemeColorCount; ++i)
+        for (size_t i = 0; i < std::size_t(DbDThemeColors); ++i)
         {
-            style.Colors[BlueThemeColors[i].index] = BlueThemeColors[i].color;
-        }
-        break;
-    }
-    case Theme::Neon:
-    {
-        for (size_t i = 0; i < NeonThemeColorCount; ++i)
-        {
-            style.Colors[NeonThemeColors[i].index] = NeonThemeColors[i].color;
+            style.Colors[DbDThemeColors[i].index] = DbDThemeColors[i].color;
         }
         break;
     }

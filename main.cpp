@@ -11,7 +11,7 @@ int __stdcall wWinMain(
     PWSTR lpCmdLine,
     int nCmdShow)
 {
-    gui::CreateHWindow(L"Util", L"Util Classs");
+    gui::CreateHWindow(L"Bloodpoints Calculator", L"Bloodpoints Calculator Classs");
     gui::CreateDevice();
     gui::CreateImGui();
 
