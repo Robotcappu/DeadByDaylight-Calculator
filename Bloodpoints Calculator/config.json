@@ -1,0 +1,14 @@
+{
+    "CurrentTheme": "DbD",
+    "Themes": {
+        "Dark": {
+            "type": "builtin"
+        },
+        "DbD": {
+            "type": "builtin"
+        },
+        "Light": {
+            "type": "builtin"
+        }
+    }
+}

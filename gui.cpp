@@ -1,15 +1,70 @@
-
-#include "gui.h"
-#include "imgui/imgui.h"
-#include "imgui/imgui_impl_win32.h"
-#include "imgui/imgui_impl_dx9.h"
-#include "modules/core/Logger.h"
+// gui.cpp
 
 #include <iostream>
 #include <d3d9.h>
 #pragma comment(lib, "d3d9.lib")
 #include <tchar.h>
 #include <thread>
+#include <unordered_set>
+#include <filesystem>
+#include <future>
+#include <iomanip>
+
+#include "gui.h"
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_win32.h"
+#include "imgui/imgui_impl_dx9.h"
+#include "modules/core/Logger.h"
+#include "Globals.h"
+#include "modules/settings/Theme.h"
+#include "modules/settings/ThemeManager.h"
+#include "modules/utilities/PopupHandler.h"
+#include "modules/core/Logger.h"
+#include "modules/utilities/getFolder.h"
+#include "modules/DbD/DbDBloodpoints.h"
+#include "modules/DbD/DbDStrategies.h"
+
+static std::vector<int> survivorStatus(DbDBloodpoints::SurvivorObjectives.size(), 0);
+
+// Buffer for Progressbars
+char survivorProgressTotalBuffer[32];
+char survivorProgressObjectivesBuffer[32];
+char survivorProgressAltruismBuffer[32];
+char survivorProgressBoldnessBuffer[32];
+char survivorProgressSurvivalBuffer[32];
+
+// Progressbars
+static float survivorProgressTotal = 0.0f;
+static float survivorProgressObjectives = 0.0f;
+static float survivorProgressSurvival = 0.0f;
+static float survivorProgressAlturism = 0.0f;
+static float survivorProgressBoldness = 0.0f;
+
+// Load and Save Strategies
+static char saveNameBuffer[128] = "";
+static int selectedStrategyIndex = -1;
+static std::vector<std::string> availableStrategies;
+
+bool updated = false;
+
+namespace fs = std::filesystem;
+
+void ScanStrategies()
+{
+    availableStrategies.clear();
+    const std::string folderPath = "Bloodpoints Calculator/Strategies/";
+
+    if (!fs::exists(folderPath))
+        fs::create_directories(folderPath);
+
+    for (const auto &entry : fs::directory_iterator(folderPath))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".json")
+        {
+            availableStrategies.push_back(entry.path().stem().string());
+        }
+    }
+}
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND window,
@@ -130,12 +185,6 @@ void gui::CreateHWindow(
         MessageBoxW(NULL, L"Fenster konnte nicht erstellt werden.", L"Fehler", MB_ICONERROR);
         return;
     }
-    // Nachdem das Fenster erfolgreich erstellt wurde, also direkt vor ShowWindow/UpdateWindow:
-    LONG exStyle = GetWindowLong(window, GWL_EXSTYLE);
-    SetWindowLong(window, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-
-    // Setze den Farbschlüssel: Alle Pixel in Schwarz (0,0,0) werden transparent
-    SetLayeredWindowAttributes(window, RGB(0, 0, 0), 0, LWA_COLORKEY);
 
     ShowWindow(window, SW_SHOWDEFAULT);
     UpdateWindow(window);
@@ -289,25 +338,620 @@ void gui::Render() noexcept
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize({currentWidth, currentHeight});
-    ImGui::Begin("SauberZauber", &exit, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Bloodpoints Calculator", &exit, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+
+    // Update Buffer for Progressbars from Survivor
+    snprintf(survivorProgressTotalBuffer, sizeof(survivorProgressTotalBuffer), "%.0f%%", survivorProgressTotal * 100.0f);
+    snprintf(survivorProgressObjectivesBuffer, sizeof(survivorProgressObjectivesBuffer), "%.0f%%", survivorProgressObjectives * 100.0f);
+    snprintf(survivorProgressAltruismBuffer, sizeof(survivorProgressAltruismBuffer), "%.0f%%", survivorProgressAlturism * 100.0f);
+    snprintf(survivorProgressBoldnessBuffer, sizeof(survivorProgressBoldnessBuffer), "%.0f%%", survivorProgressBoldness * 100.0f);
+    snprintf(survivorProgressSurvivalBuffer, sizeof(survivorProgressSurvivalBuffer), "%.0f%%", survivorProgressSurvival * 100.0f);
 
     if (ImGui::BeginTabBar("MainTabBar"))
     {
-        // Tab für Reinigungsvorgänge
+        // General Menu Information
         if (ImGui::BeginTabItem("Menu"))
         {
-            ImGui::Separator();
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Templates & Einstellungen"))
+        if (ImGui::BeginTabItem("Survivor"))
+        {
+            ImGui::Text("Survivor Progress:");
+
+            // Neue Gesamte-Progressbar
+            ImGui::ProgressBar(survivorProgressTotal, ImVec2(0.f, 0.f), survivorProgressTotalBuffer);
+
+            // ========== OBJECTIVES ==========
+            if (ImGui::CollapsingHeader("Objectives"))
+            {
+                ImGui::ProgressBar(survivorProgressObjectives, ImVec2(0.f, 0.f), survivorProgressObjectivesBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Objectives")
+                    {
+                        ImGui::PushID(static_cast<int>(i)); // WICHTIG: für eindeutige IDs pro Zeile
+
+                        if (objective.noCap)
+                        {
+                            // --- NoCap: InputInt
+                            updated |= ImGui::InputInt(objective.name.c_str(), &survivorStatus[i], 1, 5);
+                            if (survivorStatus[i] < 0)
+                                survivorStatus[i] = 0; // Kein negativer Input erlaubt
+                        }
+                        else
+                        {
+                            // --- Normale Checkbox
+                            bool checked = (survivorStatus[i] > 0);
+                            if (ImGui::Checkbox(objective.name.c_str(), &checked))
+                            {
+                                survivorStatus[i] = checked ? 1 : 0;
+                                updated = true;
+                            }
+                        }
+
+                        // --- Tooltip beim Hover
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+
+                        ImGui::PopID();
+                    }
+                }
+            }
+
+            // ========== SURVIVAL ==========
+            if (ImGui::CollapsingHeader("Survival"))
+            {
+                ImGui::ProgressBar(survivorProgressSurvival, ImVec2(0.f, 0.f), survivorProgressSurvivalBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Survival")
+                    {
+                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+                    }
+                }
+            }
+
+            // ========== ALTRUISM ==========
+            if (ImGui::CollapsingHeader("Altruism"))
+            {
+                ImGui::ProgressBar(survivorProgressAlturism, ImVec2(0.f, 0.f), survivorProgressAltruismBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Altruism")
+                    {
+                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+                    }
+                }
+            }
+
+            // ========== BOLDNESS ==========
+            if (ImGui::CollapsingHeader("Boldness"))
+            {
+                ImGui::ProgressBar(survivorProgressBoldness, ImVec2(0.f, 0.f), survivorProgressBoldnessBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Boldness")
+                    {
+                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+                    }
+                }
+            }
+
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Strategies"))
+            {
+
+                for (size_t i = 0; i < DbDStrategies::strategies.size(); ++i)
+                {
+                    if (ImGui::Checkbox(DbDStrategies::strategies[i].name.c_str(), &DbDStrategies::strategies[i].active))
+                    {
+                        updated = true;
+                    }
+
+                    if (ImGui::IsItemHovered())
+                    {
+                        ImGui::SetTooltip("%s", DbDStrategies::strategies[i].tooltip.c_str());
+                    }
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Save & Load"))
+            {
+
+                ScanStrategies();
+
+                // Eingabefeld für neuen Strategie-Namen
+                ImGui::InputText("Strategy Name", saveNameBuffer, sizeof(saveNameBuffer));
+
+                if (ImGui::Button("Save Strategy"))
+                {
+                    if (strlen(saveNameBuffer) > 0)
+                    {
+                        const std::string folderPath = "Strategies/";
+
+                        // Ordner sicherstellen
+                        const std::filesystem::path fullFolderPath = std::filesystem::current_path() / "Bloodpoints Calculator" / folderPath;
+
+                        if (!std::filesystem::exists(fullFolderPath))
+                        {
+                            try
+                            {
+                                std::filesystem::create_directories(fullFolderPath);
+                            }
+                            catch (const std::exception &ex)
+                            {
+                                Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_CONFIG,
+                                                       std::string("Failed to create strategies folder: ") + ex.what(),
+                                                       __FUNCTION__, __FILE__, __LINE__);
+                                return;
+                            }
+                        }
+
+                        std::string relativeFilename = folderPath + std::string(saveNameBuffer) + ".json";
+
+                        ConfigHandler config(relativeFilename);
+                        config.getConfig()["survivorStatus"] = survivorStatus;
+
+                        if (config.save())
+                        {
+                            Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CONFIG,
+                                                   "Strategy saved successfully: " + relativeFilename,
+                                                   __FUNCTION__, __FILE__, __LINE__);
+                        }
+                        else
+                        {
+                            Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_CONFIG,
+                                                   "Failed to save strategy: " + relativeFilename,
+                                                   __FUNCTION__, __FILE__, __LINE__);
+                        }
+                    }
+                }
+
+                ImGui::Separator();
+
+                // Dropdown für gespeicherte Strategien
+                if (availableStrategies.empty())
+                {
+                    ImGui::Text("No saved strategies found.");
+                }
+                else
+                {
+                    if (ImGui::BeginCombo("Load Strategy", (selectedStrategyIndex >= 0) ? availableStrategies[selectedStrategyIndex].c_str() : "Select..."))
+                    {
+                        for (int i = 0; i < availableStrategies.size(); ++i)
+                        {
+                            bool isSelected = (selectedStrategyIndex == i);
+                            if (ImGui::Selectable(availableStrategies[i].c_str(), isSelected))
+                            {
+                                selectedStrategyIndex = i;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    if (selectedStrategyIndex >= 0)
+                    {
+                        if (ImGui::Button("Load Selected Strategy"))
+                        {
+                            std::string filename = "Bloodpoints Calculator/Strategies/" + availableStrategies[selectedStrategyIndex] + ".json";
+
+                            ConfigHandler config(filename);
+                            if (config.load())
+                            {
+                                if (config.getConfig().contains("survivorStatus"))
+                                {
+                                    survivorStatus = config.getConfig()["survivorStatus"].get<std::vector<int>>();
+                                }
+                            }
+                        }
+
+                        ImGui::SameLine(); // <--- sorgt dafür, dass Delete direkt daneben ist!
+
+                        if (ImGui::Button("Delete Selected Strategy"))
+                        {
+                            std::string filename = "Bloodpoints Calculator/Strategies/" + availableStrategies[selectedStrategyIndex] + ".json";
+
+                            // Existenz prüfen und Datei löschen
+                            try
+                            {
+                                if (std::filesystem::exists(filename))
+                                {
+                                    std::filesystem::remove(filename);
+
+                                    Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CONFIG,
+                                                           "Strategy deleted successfully: " + filename,
+                                                           __FUNCTION__, __FILE__, __LINE__);
+
+                                    ScanStrategies();           // Liste neu laden
+                                    selectedStrategyIndex = -1; // Auswahl zurücksetzen
+                                }
+                                else
+                                {
+                                    Logger::instance().log(LogLevel::LOG_WARNING, LogCategory::LOG_CONFIG,
+                                                           "Strategy file not found for deletion: " + filename,
+                                                           __FUNCTION__, __FILE__, __LINE__);
+                                }
+                            }
+                            catch (const std::exception &ex)
+                            {
+                                Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_CONFIG,
+                                                       std::string("Failed to delete strategy: ") + ex.what(),
+                                                       __FUNCTION__, __FILE__, __LINE__);
+                            }
+                        }
+                    }
+                }
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Killer"))
+        {
+
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Settings"))
         {
             if (ImGui::CollapsingHeader("Templates"))
             {
-                ImGui::Text("Change the look of the Window");
+                static std::vector<std::string> allThemes;
+                static int selectedThemeIndex = -1;
+                static char newThemeName[32] = "";
+
+                // Hilfsfunktion zum Refresh der Theme-Liste
+                auto RefreshThemeList = []()
+                {
+                    allThemes = gThemeManager->getAllThemeNames();
+                };
+
+                // Initial-Refresh (nur beim ersten Mal)
+                static bool firstRun = true;
+                if (firstRun)
+                {
+                    RefreshThemeList();
+
+                    std::string currentTheme = gThemeManager->getCurrentThemeName();
+                    auto it = std::find(allThemes.begin(), allThemes.end(), currentTheme);
+                    if (it != allThemes.end())
+                        selectedThemeIndex = static_cast<int>(std::distance(allThemes.begin(), it));
+                    else
+                        selectedThemeIndex = 0; // Fallback, wenn nicht gefunden
+
+                    firstRun = false;
+                }
+
+                // Theme-Auswahl per Combo
+                if (!allThemes.empty())
+                {
+                    if (ImGui::Combo("Theme", &selectedThemeIndex, [](void *data, int idx, const char **out_text)
+                                     {
+                         const auto &names = *static_cast<std::vector<std::string> *>(data);
+                         if (idx < 0 || idx >= static_cast<int>(names.size()))
+                             return false;
+                         *out_text = names[idx].c_str();
+                         return true; }, static_cast<void *>(&allThemes), static_cast<int>(allThemes.size())))
+                    {
+                        gThemeManager->setCurrentTheme(allThemes[selectedThemeIndex]);
+                    }
+                }
+
+                // Neuer Theme-Name
+                ImGui::InputText("New Theme Name", newThemeName, sizeof(newThemeName));
+
+                // Theme speichern
+                if (ImGui::Button("Save Theme", ImVec2(100, 0)))
+                {
+                    if (strlen(newThemeName) > 0)
+                    {
+                        gThemeManager->saveCurrentThemeAs(newThemeName);
+                        RefreshThemeList();
+
+                        // neuen Index setzen
+                        selectedThemeIndex = static_cast<int>(allThemes.size()) - 1;
+                        memset(newThemeName, 0, sizeof(newThemeName));
+                    }
+                }
+
+                // Theme löschen (nur wenn kein Standard-Theme)
+                bool isDefaultThemeSelected = (selectedThemeIndex >= 4);
+                if (isDefaultThemeSelected)
+                {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Delete Theme", ImVec2(100, 0)))
+                    {
+                        gThemeManager->deleteTheme(allThemes[selectedThemeIndex]);
+                        RefreshThemeList();
+                        selectedThemeIndex = (std::min)(1, static_cast<int>(allThemes.size()) - 1);
+                    }
+                }
+
+                ImGuiStyle &style = ImGui::GetStyle();
+
+                // --- Individuelle Farb-Anpassungen ---
+                if (ImGui::TreeNode("Window"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_WindowBg];
+                    if (ImGui::ColorEdit4("WindowBg", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_WindowBg] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_WindowBg", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_ChildBg];
+                    if (ImGui::ColorEdit4("ChildBg", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ChildBg] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ChildBg", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_PopupBg];
+                    if (ImGui::ColorEdit4("PopupBg", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_PopupBg] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_PopupBg", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Title"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_Border];
+                    if (ImGui::ColorEdit4("Border", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_Border] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_Border", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TitleBg];
+                    if (ImGui::ColorEdit4("TitleBg", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TitleBg] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TitleBg", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TitleBgActive];
+                    if (ImGui::ColorEdit4("TitleBgActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TitleBgActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TitleBgActive", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TitleBgCollapsed];
+                    if (ImGui::ColorEdit4("TitleBgCollapsed", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TitleBgCollapsed] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TitleBgCollapsed", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Header"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_Header];
+                    if (ImGui::ColorEdit4("Header", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_Header] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_Header", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_HeaderHovered];
+                    if (ImGui::ColorEdit4("HeaderHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_HeaderHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_HeaderHovered", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_HeaderActive];
+                    if (ImGui::ColorEdit4("HeaderActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_HeaderActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_HeaderActive", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Buttons"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_Button];
+                    if (ImGui::ColorEdit4("Button", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_Button] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_Button", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_ButtonHovered];
+                    if (ImGui::ColorEdit4("ButtonHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ButtonHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ButtonHovered", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_ButtonActive];
+                    if (ImGui::ColorEdit4("ButtonActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ButtonActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ButtonActive", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Frames"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_FrameBg];
+                    if (ImGui::ColorEdit4("FrameBg", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_FrameBg] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_FrameBg", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_FrameBgHovered];
+                    if (ImGui::ColorEdit4("FrameBgHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_FrameBgHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_FrameBgHovered", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_FrameBgActive];
+                    if (ImGui::ColorEdit4("FrameBgActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_FrameBgActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_FrameBgActive", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Tabs"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_Tab];
+                    if (ImGui::ColorEdit4("Tab", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_Tab] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_Tab", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TabHovered];
+                    if (ImGui::ColorEdit4("TabHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TabHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TabHovered", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TabActive];
+                    if (ImGui::ColorEdit4("TabActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TabActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TabActive", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TabUnfocused];
+                    if (ImGui::ColorEdit4("TabUnfocused", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TabUnfocused] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TabUnfocused", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TabUnfocusedActive];
+                    if (ImGui::ColorEdit4("TabUnfocusedActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TabUnfocusedActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TabUnfocusedActive", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Slider"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_SliderGrab];
+                    if (ImGui::ColorEdit4("SliderGrab", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_SliderGrab] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_SliderGrab", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_SliderGrabActive];
+                    if (ImGui::ColorEdit4("SliderGrabActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_SliderGrabActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_SliderGrabActive", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Scrollbar"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_ScrollbarBg];
+                    if (ImGui::ColorEdit4("ScrollbarBg", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ScrollbarBg] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ScrollbarBg", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_ScrollbarGrab];
+                    if (ImGui::ColorEdit4("ScrollbarGrab", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ScrollbarGrab] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ScrollbarGrab", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_ScrollbarGrabHovered];
+                    if (ImGui::ColorEdit4("ScrollbarGrabHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ScrollbarGrabHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ScrollbarGrabHovered", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_ScrollbarGrabActive];
+                    if (ImGui::ColorEdit4("ScrollbarGrabActive", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_ScrollbarGrabActive] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_ScrollbarGrabActive", color);
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Text"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_Text];
+                    if (ImGui::ColorEdit4("Text", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_Text] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_Text", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_TextDisabled];
+                    if (ImGui::ColorEdit4("TextDisabled", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_TextDisabled] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_TextDisabled", color);
+                    }
+                    ImGui::TreePop();
+                }
+                if (ImGui::TreeNode("Progress Bars"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_PlotHistogram];
+                    if (ImGui::ColorEdit4("ProgressBar", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_PlotHistogram] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_PlotHistogram", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_PlotHistogramHovered];
+                    if (ImGui::ColorEdit4("ProgressBarHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_PlotHistogramHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_PlotHistogramHovered", color);
+                    }
+
+                    ImGui::TreePop();
+                }
             }
+
             // Einklappbarer Bereich für die Log-Dateien
-            if (ImGui::CollapsingHeader("Log Dateien"))
+            if (ImGui::CollapsingHeader("Logging"))
             {
                 static int currentLevel = 0; // 0: DEBUG, 1: INFO, 2: WARNING, 3: ERROR
                 const char *levels[] = {"DEBUG", "INFO", "WARNING", "ERROR"};
@@ -349,6 +993,75 @@ void gui::Render() noexcept
         }
 
         ImGui::EndTabBar();
+    }
+
+    // Updating all Progressbars if needed
+    if (updated)
+    {
+        int reachedObjectives = 0;
+        int reachedAltruism = 0;
+        int reachedBoldness = 0;
+        int reachedSurvival = 0;
+
+        // 1x sauber durchgehen
+        for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+        {
+            const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+            int value = 0;
+
+            if (objective.noCap)
+                value = survivorStatus[i] * static_cast<int>(objective.bloodpoints);
+            else if (survivorStatus[i])
+                value = static_cast<int>(objective.cap);
+
+            if (objective.category == "Objectives")
+                reachedObjectives += value;
+            else if (objective.category == "Altruism")
+                reachedAltruism += value;
+            else if (objective.category == "Boldness")
+                reachedBoldness += value;
+            else if (objective.category == "Survival")
+                reachedSurvival += value;
+        }
+
+        // Strategien anwenden (wenn aktiviert)
+        for (const auto &strat : DbDStrategies::strategies)
+        {
+            if (strat.active)
+            {
+                reachedObjectives += strat.objectivesBonus;
+                reachedAltruism += strat.altruismBonus;
+                reachedBoldness += strat.boldnessBonus;
+                reachedSurvival += strat.survivalBonus;
+            }
+        }
+
+        // Maximalpunkte aus deiner Bloodpoints.h
+        const float maxPoints = static_cast<float>(DbDBloodpoints::MaxPointsPerCategory);
+
+        survivorProgressObjectives = reachedObjectives / maxPoints;
+        survivorProgressAlturism = reachedAltruism / maxPoints;
+        survivorProgressBoldness = reachedBoldness / maxPoints;
+        survivorProgressSurvival = reachedSurvival / maxPoints;
+
+        int cappedObjectives = reachedObjectives;
+        if (cappedObjectives > DbDBloodpoints::MaxPointsPerCategory)
+            cappedObjectives = DbDBloodpoints::MaxPointsPerCategory;
+
+        int cappedAltruism = reachedAltruism;
+        if (cappedAltruism > DbDBloodpoints::MaxPointsPerCategory)
+            cappedAltruism = DbDBloodpoints::MaxPointsPerCategory;
+
+        int cappedBoldness = reachedBoldness;
+        if (cappedBoldness > DbDBloodpoints::MaxPointsPerCategory)
+            cappedBoldness = DbDBloodpoints::MaxPointsPerCategory;
+
+        int cappedSurvival = reachedSurvival;
+        if (cappedSurvival > DbDBloodpoints::MaxPointsPerCategory)
+            cappedSurvival = DbDBloodpoints::MaxPointsPerCategory;
+
+        float totalReached = static_cast<float>(cappedObjectives + cappedAltruism + cappedBoldness + cappedSurvival);
+        survivorProgressTotal = totalReached / (maxPoints * 4.0f);
     }
 
     ImGui::End();
