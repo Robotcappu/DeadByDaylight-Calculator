@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Util)
+project(Bloodpoints_Calculator)
 
 # C++ Standard setzen
 set(CMAKE_CXX_STANDARD 17)
@@ -17,9 +17,12 @@ endif()
 # Header-Suchpfade
 include_directories(
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/modules
+    ${CMAKE_SOURCE_DIR}/modules/core
     ${CMAKE_SOURCE_DIR}/imgui
     ${CMAKE_SOURCE_DIR}/json
+    ${CMAKE_SOURCE_DIR}/modules/settings
+    ${CMAKE_SOURCE_DIR}/modules/utilities
+    ${CMAKE_SOURCE_DIR}/modules/core
 )
 
 # Alle relevanten .cpp-Dateien automatisch sammeln
@@ -32,8 +35,12 @@ file(GLOB_RECURSE SOURCES
 add_executable(${PROJECT_NAME}
     main.cpp
     gui.cpp
-    modules/core/Logger.cpp  # <- Logger hier eintragen
-    # Weitere .cpp-Dateien, z.B. aus dem imgui-Ordner ...
+    modules/core/Logger.cpp
+    modules/core/ConfigHandler.cpp
+    modules/settings/Theme.cpp
+    modules/settings/ThemeManager.cpp
+    modules/utilities/getFolder.cpp
+    modules/utilities/PopupHandler.cpp
     imgui/imgui.cpp
     imgui/imgui_demo.cpp
     imgui/imgui_draw.cpp

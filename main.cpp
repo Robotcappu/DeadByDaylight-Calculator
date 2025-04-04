@@ -1,6 +1,9 @@
-
+// main.cpp
 #include "gui.h"
+#include "Globals.h"
 #include <thread>
+
+ThemeManager* gThemeManager = nullptr;
 
 int __stdcall wWinMain(
     HINSTANCE hinstance,
@@ -8,9 +11,12 @@ int __stdcall wWinMain(
     PWSTR lpCmdLine,
     int nCmdShow)
 {
-    gui::CreateHWindow(L"Util", L"Util Classs");
+    gui::CreateHWindow(L"Bloodpoints Calculator", L"Bloodpoints Calculator Classs");
     gui::CreateDevice();
     gui::CreateImGui();
+
+    gThemeManager = new ThemeManager("config.json");
+    gThemeManager->loadFromConfig();
 
     while (gui::exit)
     {
@@ -21,6 +27,7 @@ int __stdcall wWinMain(
         std::this_thread::sleep_for(std::chrono::milliseconds(7));
     }
 
+    delete gThemeManager;
     gui::DestroyImGui();
     gui::DestroyDevice();
     gui::DestroyHWindow();
