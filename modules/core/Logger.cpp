@@ -13,30 +13,33 @@ Logger& Logger::instance() {
 
 Logger::Logger() {
     try {
-        // AppData Pfad holen
-        const char* appDataPath = getenv("APPDATA");
+        char exePath[MAX_PATH];
+        GetModuleFileNameA(NULL, exePath, MAX_PATH);
 
-        if (!appDataPath) {
-            throw std::runtime_error("APPDATA konnte nicht gefunden werden");
-        }
+        // Pfad zur EXE extrahieren
+        std::string fullPath(exePath);
+        size_t lastSlash = fullPath.find_last_of("\\/");
+        std::string exeDir = (lastSlash != std::string::npos) ? fullPath.substr(0, lastSlash) : ".";
 
-        std::string logDir = std::string(appDataPath) + "\\Bloodpoints Calculator\\logs\\";
-        std::filesystem::create_directories(logDir); // Ordnerstruktur anlegen
+        // Neuer Log-Ordner im EXE-Verzeichnis
+        std::string logDir = exeDir + "\\Bloodpoints Calculator\\logs\\";
+        std::filesystem::create_directories(logDir);
 
-        // Timestamp als Dateiname
+        // Logdatei vorbereiten
         std::string timestamp = getTimestampForFilename();
-        std::string fullPath = logDir + "log_" + timestamp + ".json";
+        std::string fullLogPath = logDir + "log_" + timestamp + ".json";
 
-        // Logdatei öffnen
-        logFile.open(fullPath, std::ios::app);
+        // Datei öffnen
+        logFile.open(fullLogPath, std::ios::app);
         if (!logFile.is_open()) {
-            std::cerr << "Fehler: Log-Datei konnte nicht geöffnet werden!" << std::endl;
+            std::cerr << "Logger Fehler: Logdatei konnte nicht geöffnet werden!" << std::endl;
         }
 
     } catch (const std::exception& ex) {
         std::cerr << "Logger Init-Fehler: " << ex.what() << std::endl;
     }
 }
+
 
 Logger::~Logger() {
     if (logFile.is_open()) {

@@ -19,9 +19,52 @@
 #include "modules/settings/Theme.h"
 #include "modules/settings/ThemeManager.h"
 #include "modules/utilities/PopupHandler.h"
-#include "modules/utilities/CacheHandler.h"
 #include "modules/core/Logger.h"
 #include "modules/utilities/getFolder.h"
+#include "modules/DbD/DbDBloodpoints.h"
+#include "modules/DbD/DbDStrategies.h"
+
+static std::vector<int> survivorStatus(DbDBloodpoints::SurvivorObjectives.size(), 0);
+
+// Buffer for Progressbars
+char survivorProgressTotalBuffer[32];
+char survivorProgressObjectivesBuffer[32];
+char survivorProgressAltruismBuffer[32];
+char survivorProgressBoldnessBuffer[32];
+char survivorProgressSurvivalBuffer[32];
+
+// Progressbars
+static float survivorProgressTotal = 0.0f;
+static float survivorProgressObjectives = 0.0f;
+static float survivorProgressSurvival = 0.0f;
+static float survivorProgressAlturism = 0.0f;
+static float survivorProgressBoldness = 0.0f;
+
+// Load and Save Strategies
+static char saveNameBuffer[128] = "";
+static int selectedStrategyIndex = -1;
+static std::vector<std::string> availableStrategies;
+
+bool updated = false;
+
+namespace fs = std::filesystem;
+
+void ScanStrategies()
+{
+    availableStrategies.clear();
+    const std::string folderPath = "Bloodpoints Calculator/Strategies/";
+
+    if (!fs::exists(folderPath))
+        fs::create_directories(folderPath);
+
+    for (const auto &entry : fs::directory_iterator(folderPath))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".json")
+        {
+            availableStrategies.push_back(entry.path().stem().string());
+        }
+    }
+}
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND window,
@@ -297,6 +340,13 @@ void gui::Render() noexcept
     ImGui::SetNextWindowSize({currentWidth, currentHeight});
     ImGui::Begin("Bloodpoints Calculator", &exit, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
+    // Update Buffer for Progressbars from Survivor
+    snprintf(survivorProgressTotalBuffer, sizeof(survivorProgressTotalBuffer), "%.0f%%", survivorProgressTotal * 100.0f);
+    snprintf(survivorProgressObjectivesBuffer, sizeof(survivorProgressObjectivesBuffer), "%.0f%%", survivorProgressObjectives * 100.0f);
+    snprintf(survivorProgressAltruismBuffer, sizeof(survivorProgressAltruismBuffer), "%.0f%%", survivorProgressAlturism * 100.0f);
+    snprintf(survivorProgressBoldnessBuffer, sizeof(survivorProgressBoldnessBuffer), "%.0f%%", survivorProgressBoldness * 100.0f);
+    snprintf(survivorProgressSurvivalBuffer, sizeof(survivorProgressSurvivalBuffer), "%.0f%%", survivorProgressSurvival * 100.0f);
+
     if (ImGui::BeginTabBar("MainTabBar"))
     {
         // General Menu Information
@@ -307,13 +357,260 @@ void gui::Render() noexcept
 
         if (ImGui::BeginTabItem("Survivor"))
         {
-            
+            ImGui::Text("Survivor Progress:");
+
+            // Neue Gesamte-Progressbar
+            ImGui::ProgressBar(survivorProgressTotal, ImVec2(0.f, 0.f), survivorProgressTotalBuffer);
+
+            // ========== OBJECTIVES ==========
+            if (ImGui::CollapsingHeader("Objectives"))
+            {
+                ImGui::ProgressBar(survivorProgressObjectives, ImVec2(0.f, 0.f), survivorProgressObjectivesBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Objectives")
+                    {
+                        ImGui::PushID(static_cast<int>(i)); // WICHTIG: für eindeutige IDs pro Zeile
+
+                        if (objective.noCap)
+                        {
+                            // --- NoCap: InputInt
+                            updated |= ImGui::InputInt(objective.name.c_str(), &survivorStatus[i], 1, 5);
+                            if (survivorStatus[i] < 0)
+                                survivorStatus[i] = 0; // Kein negativer Input erlaubt
+                        }
+                        else
+                        {
+                            // --- Normale Checkbox
+                            bool checked = (survivorStatus[i] > 0);
+                            if (ImGui::Checkbox(objective.name.c_str(), &checked))
+                            {
+                                survivorStatus[i] = checked ? 1 : 0;
+                                updated = true;
+                            }
+                        }
+
+                        // --- Tooltip beim Hover
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+
+                        ImGui::PopID();
+                    }
+                }
+            }
+
+            // ========== SURVIVAL ==========
+            if (ImGui::CollapsingHeader("Survival"))
+            {
+                ImGui::ProgressBar(survivorProgressSurvival, ImVec2(0.f, 0.f), survivorProgressSurvivalBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Survival")
+                    {
+                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+                    }
+                }
+            }
+
+            // ========== ALTRUISM ==========
+            if (ImGui::CollapsingHeader("Altruism"))
+            {
+                ImGui::ProgressBar(survivorProgressAlturism, ImVec2(0.f, 0.f), survivorProgressAltruismBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Altruism")
+                    {
+                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+                    }
+                }
+            }
+
+            // ========== BOLDNESS ==========
+            if (ImGui::CollapsingHeader("Boldness"))
+            {
+                ImGui::ProgressBar(survivorProgressBoldness, ImVec2(0.f, 0.f), survivorProgressBoldnessBuffer);
+
+                for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+                {
+                    const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+
+                    if (objective.category == "Boldness")
+                    {
+                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+
+                        if (ImGui::IsItemHovered() && !objective.tooltip.empty())
+                            ImGui::SetTooltip("%s", objective.tooltip.c_str());
+                    }
+                }
+            }
+
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Strategies"))
+            {
+
+                for (size_t i = 0; i < DbDStrategies::strategies.size(); ++i)
+                {
+                    if (ImGui::Checkbox(DbDStrategies::strategies[i].name.c_str(), &DbDStrategies::strategies[i].active))
+                    {
+                        updated = true;
+                    }
+
+                    if (ImGui::IsItemHovered())
+                    {
+                        ImGui::SetTooltip("%s", DbDStrategies::strategies[i].tooltip.c_str());
+                    }
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Save & Load"))
+            {
+
+                ScanStrategies();
+
+                // Eingabefeld für neuen Strategie-Namen
+                ImGui::InputText("Strategy Name", saveNameBuffer, sizeof(saveNameBuffer));
+
+                if (ImGui::Button("Save Strategy"))
+                {
+                    if (strlen(saveNameBuffer) > 0)
+                    {
+                        const std::string folderPath = "Strategies/";
+
+                        // Ordner sicherstellen
+                        const std::filesystem::path fullFolderPath = std::filesystem::current_path() / "Bloodpoints Calculator" / folderPath;
+
+                        if (!std::filesystem::exists(fullFolderPath))
+                        {
+                            try
+                            {
+                                std::filesystem::create_directories(fullFolderPath);
+                            }
+                            catch (const std::exception &ex)
+                            {
+                                Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_CONFIG,
+                                                       std::string("Failed to create strategies folder: ") + ex.what(),
+                                                       __FUNCTION__, __FILE__, __LINE__);
+                                return;
+                            }
+                        }
+
+                        std::string relativeFilename = folderPath + std::string(saveNameBuffer) + ".json";
+
+                        ConfigHandler config(relativeFilename);
+                        config.getConfig()["survivorStatus"] = survivorStatus;
+
+                        if (config.save())
+                        {
+                            Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CONFIG,
+                                                   "Strategy saved successfully: " + relativeFilename,
+                                                   __FUNCTION__, __FILE__, __LINE__);
+                        }
+                        else
+                        {
+                            Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_CONFIG,
+                                                   "Failed to save strategy: " + relativeFilename,
+                                                   __FUNCTION__, __FILE__, __LINE__);
+                        }
+                    }
+                }
+
+                ImGui::Separator();
+
+                // Dropdown für gespeicherte Strategien
+                if (availableStrategies.empty())
+                {
+                    ImGui::Text("No saved strategies found.");
+                }
+                else
+                {
+                    if (ImGui::BeginCombo("Load Strategy", (selectedStrategyIndex >= 0) ? availableStrategies[selectedStrategyIndex].c_str() : "Select..."))
+                    {
+                        for (int i = 0; i < availableStrategies.size(); ++i)
+                        {
+                            bool isSelected = (selectedStrategyIndex == i);
+                            if (ImGui::Selectable(availableStrategies[i].c_str(), isSelected))
+                            {
+                                selectedStrategyIndex = i;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    if (selectedStrategyIndex >= 0)
+                    {
+                        if (ImGui::Button("Load Selected Strategy"))
+                        {
+                            std::string filename = "Bloodpoints Calculator/Strategies/" + availableStrategies[selectedStrategyIndex] + ".json";
+
+                            ConfigHandler config(filename);
+                            if (config.load())
+                            {
+                                if (config.getConfig().contains("survivorStatus"))
+                                {
+                                    survivorStatus = config.getConfig()["survivorStatus"].get<std::vector<int>>();
+                                }
+                            }
+                        }
+
+                        ImGui::SameLine(); // <--- sorgt dafür, dass Delete direkt daneben ist!
+
+                        if (ImGui::Button("Delete Selected Strategy"))
+                        {
+                            std::string filename = "Bloodpoints Calculator/Strategies/" + availableStrategies[selectedStrategyIndex] + ".json";
+
+                            // Existenz prüfen und Datei löschen
+                            try
+                            {
+                                if (std::filesystem::exists(filename))
+                                {
+                                    std::filesystem::remove(filename);
+
+                                    Logger::instance().log(LogLevel::LOG_INFO, LogCategory::LOG_CONFIG,
+                                                           "Strategy deleted successfully: " + filename,
+                                                           __FUNCTION__, __FILE__, __LINE__);
+
+                                    ScanStrategies();           // Liste neu laden
+                                    selectedStrategyIndex = -1; // Auswahl zurücksetzen
+                                }
+                                else
+                                {
+                                    Logger::instance().log(LogLevel::LOG_WARNING, LogCategory::LOG_CONFIG,
+                                                           "Strategy file not found for deletion: " + filename,
+                                                           __FUNCTION__, __FILE__, __LINE__);
+                                }
+                            }
+                            catch (const std::exception &ex)
+                            {
+                                Logger::instance().log(LogLevel::LOG_ERROR, LogCategory::LOG_CONFIG,
+                                                       std::string("Failed to delete strategy: ") + ex.what(),
+                                                       __FUNCTION__, __FILE__, __LINE__);
+                            }
+                        }
+                    }
+                }
+            }
+
             ImGui::EndTabItem();
         }
 
         if (ImGui::BeginTabItem("Killer"))
         {
-            
+
             ImGui::EndTabItem();
         }
 
@@ -633,6 +930,24 @@ void gui::Render() noexcept
                     }
                     ImGui::TreePop();
                 }
+                if (ImGui::TreeNode("Progress Bars"))
+                {
+                    ImVec4 color = style.Colors[ImGuiCol_PlotHistogram];
+                    if (ImGui::ColorEdit4("ProgressBar", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_PlotHistogram] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_PlotHistogram", color);
+                    }
+
+                    color = style.Colors[ImGuiCol_PlotHistogramHovered];
+                    if (ImGui::ColorEdit4("ProgressBarHovered", (float *)&color))
+                    {
+                        style.Colors[ImGuiCol_PlotHistogramHovered] = color;
+                        gThemeManager->updateCustomColor("ImGuiCol_PlotHistogramHovered", color);
+                    }
+
+                    ImGui::TreePop();
+                }
             }
 
             // Einklappbarer Bereich für die Log-Dateien
@@ -678,6 +993,75 @@ void gui::Render() noexcept
         }
 
         ImGui::EndTabBar();
+    }
+
+    // Updating all Progressbars if needed
+    if (updated)
+    {
+        int reachedObjectives = 0;
+        int reachedAltruism = 0;
+        int reachedBoldness = 0;
+        int reachedSurvival = 0;
+
+        // 1x sauber durchgehen
+        for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+        {
+            const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+            int value = 0;
+
+            if (objective.noCap)
+                value = survivorStatus[i] * static_cast<int>(objective.bloodpoints);
+            else if (survivorStatus[i])
+                value = static_cast<int>(objective.cap);
+
+            if (objective.category == "Objectives")
+                reachedObjectives += value;
+            else if (objective.category == "Altruism")
+                reachedAltruism += value;
+            else if (objective.category == "Boldness")
+                reachedBoldness += value;
+            else if (objective.category == "Survival")
+                reachedSurvival += value;
+        }
+
+        // Strategien anwenden (wenn aktiviert)
+        for (const auto &strat : DbDStrategies::strategies)
+        {
+            if (strat.active)
+            {
+                reachedObjectives += strat.objectivesBonus;
+                reachedAltruism += strat.altruismBonus;
+                reachedBoldness += strat.boldnessBonus;
+                reachedSurvival += strat.survivalBonus;
+            }
+        }
+
+        // Maximalpunkte aus deiner Bloodpoints.h
+        const float maxPoints = static_cast<float>(DbDBloodpoints::MaxPointsPerCategory);
+
+        survivorProgressObjectives = reachedObjectives / maxPoints;
+        survivorProgressAlturism = reachedAltruism / maxPoints;
+        survivorProgressBoldness = reachedBoldness / maxPoints;
+        survivorProgressSurvival = reachedSurvival / maxPoints;
+
+        int cappedObjectives = reachedObjectives;
+        if (cappedObjectives > DbDBloodpoints::MaxPointsPerCategory)
+            cappedObjectives = DbDBloodpoints::MaxPointsPerCategory;
+
+        int cappedAltruism = reachedAltruism;
+        if (cappedAltruism > DbDBloodpoints::MaxPointsPerCategory)
+            cappedAltruism = DbDBloodpoints::MaxPointsPerCategory;
+
+        int cappedBoldness = reachedBoldness;
+        if (cappedBoldness > DbDBloodpoints::MaxPointsPerCategory)
+            cappedBoldness = DbDBloodpoints::MaxPointsPerCategory;
+
+        int cappedSurvival = reachedSurvival;
+        if (cappedSurvival > DbDBloodpoints::MaxPointsPerCategory)
+            cappedSurvival = DbDBloodpoints::MaxPointsPerCategory;
+
+        float totalReached = static_cast<float>(cappedObjectives + cappedAltruism + cappedBoldness + cappedSurvival);
+        survivorProgressTotal = totalReached / (maxPoints * 4.0f);
     }
 
     ImGui::End();

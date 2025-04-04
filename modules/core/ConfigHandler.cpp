@@ -72,13 +72,12 @@ bool ConfigHandler::load()
 
 bool ConfigHandler::save()
 {
-    std::ofstream file(path);
+    std::ofstream file(std::filesystem::absolute(path));
     if (!file.is_open())
         return false;
 
     try
     {
-        // Speichert die Konfiguration formatiert (4 Leerzeichen pro Einrückung)
         file << configData.dump(4);
     }
     catch (...)

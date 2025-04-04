@@ -7,7 +7,6 @@ class ConfigHandler
 {
 public:
     // Konstruktor erwartet den Dateinamen (z.B. "config.json")
-    // Die Datei wird dann im AppData\UtilsApp-Ordner abgelegt (auf Windows)
     explicit ConfigHandler(const std::string& configFileName);
 
     // Lädt die Konfiguration aus der Datei

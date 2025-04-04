@@ -39,7 +39,6 @@ add_executable(${PROJECT_NAME}
     modules/core/ConfigHandler.cpp
     modules/settings/Theme.cpp
     modules/settings/ThemeManager.cpp
-    modules/utilities/CacheHandler.cpp
     modules/utilities/getFolder.cpp
     modules/utilities/PopupHandler.cpp
     imgui/imgui.cpp
