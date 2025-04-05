@@ -550,6 +550,80 @@ void gui::Render() noexcept
                 }
             }
 
+            // === Offerings Section ===
+            if (ImGui::CollapsingHeader("Offerings"))
+            {
+                static std::vector<int> offeringCounts(DbDOfferings::offerings.size(), 0);
+                static const int maxOfferings = 5;
+                bool offeringChanged = false;
+
+                // --- Vor dem Loop: Anzahl aktuell gesetzter Offerings zählen ---
+                int currentTotalOfferings = 0;
+                for (int count : offeringCounts)
+                    currentTotalOfferings += count;
+
+                for (size_t i = 0; i < DbDOfferings::offerings.size(); ++i)
+                {
+                    ImGui::PushID(static_cast<int>(i));
+
+                    int previousCount = offeringCounts[i];
+                    offeringChanged |= ImGui::InputInt(DbDOfferings::offerings[i].name.c_str(), &offeringCounts[i]);
+
+                    // Check for negative value
+                    if (offeringCounts[i] < 0)
+                        offeringCounts[i] = 0;
+
+                    // Check for exceeding max offerings
+                    currentTotalOfferings = 0;
+                    for (int count : offeringCounts)
+                        currentTotalOfferings += count;
+
+                    if (currentTotalOfferings > maxOfferings)
+                    {
+                        offeringCounts[i] = previousCount;
+                    }
+
+                    // Tooltip
+                    if (ImGui::IsItemHovered() && !DbDOfferings::offerings[i].tooltip.empty())
+                        ImGui::SetTooltip("%s", DbDOfferings::offerings[i].tooltip.c_str());
+
+                    ImGui::PopID();
+                }
+
+                ImGui::Separator();
+
+                if (offeringChanged)
+                {
+                    totalMultiplier = 0.0f;
+
+                    for (size_t i = 0; i < DbDOfferings::offerings.size(); ++i)
+                    {
+                        if (offeringCounts[i] > 0)
+                        {
+                            totalMultiplier += DbDOfferings::offerings[i].multiplier * offeringCounts[i];
+                        }
+                    }
+                }
+
+                // Text aktualisieren
+                static char offeringMultiplierBuffer[32];
+                snprintf(offeringMultiplierBuffer, sizeof(offeringMultiplierBuffer), "Multiplier: x%.2f", totalMultiplier);
+                ImGui::Text("%s", offeringMultiplierBuffer);
+            }
+
+            if (totalMultiplier < 0.1f)
+            {
+                ImGui::Text("Total Bloodpoints: %.0f", totalReached);
+            }
+            else
+            {
+                ImGui::Text("Total Bloodpoints: %.0f", totalReached * totalMultiplier);
+            }
+
+            ImGui::Text("");
+            ImGui::Separator();
+            ImGui::Text("");
+
             if (ImGui::CollapsingHeader("Save & Load"))
             {
 
@@ -676,76 +750,6 @@ void gui::Render() noexcept
                         }
                     }
                 }
-            }
-
-            // === Offerings Section ===
-            if (ImGui::CollapsingHeader("Offerings"))
-            {
-                static std::vector<int> offeringCounts(DbDOfferings::offerings.size(), 0);
-                static const int maxOfferings = 5;
-                bool offeringChanged = false;
-
-                // --- Vor dem Loop: Anzahl aktuell gesetzter Offerings zählen ---
-                int currentTotalOfferings = 0;
-                for (int count : offeringCounts)
-                    currentTotalOfferings += count;
-
-                for (size_t i = 0; i < DbDOfferings::offerings.size(); ++i)
-                {
-                    ImGui::PushID(static_cast<int>(i));
-
-                    int previousCount = offeringCounts[i];
-                    offeringChanged |= ImGui::InputInt(DbDOfferings::offerings[i].name.c_str(), &offeringCounts[i]);
-
-                    // Check for negative value
-                    if (offeringCounts[i] < 0)
-                        offeringCounts[i] = 0;
-
-                    // Check for exceeding max offerings
-                    currentTotalOfferings = 0;
-                    for (int count : offeringCounts)
-                        currentTotalOfferings += count;
-
-                    if (currentTotalOfferings > maxOfferings)
-                    {
-                        offeringCounts[i] = previousCount;
-                    }
-
-                    // Tooltip
-                    if (ImGui::IsItemHovered() && !DbDOfferings::offerings[i].tooltip.empty())
-                        ImGui::SetTooltip("%s", DbDOfferings::offerings[i].tooltip.c_str());
-
-                    ImGui::PopID();
-                }
-
-                ImGui::Separator();
-
-                if (offeringChanged)
-                {
-                    totalMultiplier = 0.0f;
-
-                    for (size_t i = 0; i < DbDOfferings::offerings.size(); ++i)
-                    {
-                        if (offeringCounts[i] > 0)
-                        {
-                            totalMultiplier += DbDOfferings::offerings[i].multiplier * offeringCounts[i];
-                        }
-                    }
-                }
-
-                // Text aktualisieren
-                static char offeringMultiplierBuffer[32];
-                snprintf(offeringMultiplierBuffer, sizeof(offeringMultiplierBuffer), "Multiplier: x%.2f", totalMultiplier);
-                ImGui::Text("%s", offeringMultiplierBuffer);
-            }
-
-            if (totalMultiplier < 0.1f)
-            {
-                ImGui::Text("Total Bloodpoints: %.0f", totalReached);
-            }
-            else
-            {
-                ImGui::Text("Total Bloodpoints: %.0f", totalReached * totalMultiplier);
             }
 
             ImGui::EndTabItem();
