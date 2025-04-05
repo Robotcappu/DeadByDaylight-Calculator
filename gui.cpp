@@ -23,8 +23,12 @@
 #include "modules/utilities/getFolder.h"
 #include "modules/DbD/DbDBloodpoints.h"
 #include "modules/DbD/DbDStrategies.h"
+#include "modules/DbD/DbDOfferings.h"
 
 static std::vector<int> survivorStatus(DbDBloodpoints::SurvivorObjectives.size(), 0);
+
+// Total Bloodpoints amount
+static float totalReached = 0.0f;
 
 // Buffer for Progressbars
 char survivorProgressTotalBuffer[32];
@@ -45,6 +49,12 @@ static char saveNameBuffer[128] = "";
 static int selectedStrategyIndex = -1;
 static std::vector<std::string> availableStrategies;
 
+// Offering Counter
+static int totalOfferingCount = 0;
+static const int maxTotalOfferings = 5;
+static float totalMultiplier = 0.0f;
+
+// Updatebool for Progressbar
 bool updated = false;
 
 namespace fs = std::filesystem;
@@ -83,6 +93,7 @@ LRESULT __stdcall WindowProcess(
 
     switch (message)
     {
+
     case WM_SIZE:
     {
         if (gui::device && wideParameter != SIZE_MINIMIZED)
@@ -171,8 +182,8 @@ void gui::CreateHWindow(
         className,
         windowName,
         WS_POPUP,
-        50,
-        50,
+        100,
+        100,
         WIDTH,
         HEIGHT,
         NULL,
@@ -366,6 +377,7 @@ void gui::Render() noexcept
             if (ImGui::CollapsingHeader("Objectives"))
             {
                 ImGui::ProgressBar(survivorProgressObjectives, ImVec2(0.f, 0.f), survivorProgressObjectivesBuffer);
+                ImGui::Separator();
 
                 for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
                 {
@@ -406,6 +418,7 @@ void gui::Render() noexcept
             if (ImGui::CollapsingHeader("Survival"))
             {
                 ImGui::ProgressBar(survivorProgressSurvival, ImVec2(0.f, 0.f), survivorProgressSurvivalBuffer);
+                ImGui::Separator();
 
                 for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
                 {
@@ -413,10 +426,31 @@ void gui::Render() noexcept
 
                     if (objective.category == "Survival")
                     {
-                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+                        ImGui::PushID(static_cast<int>(i));
 
+                        if (!objective.noCap)
+                        {
+                            // --- NoCap: InputInt
+                            updated |= ImGui::InputInt(objective.name.c_str(), &survivorStatus[i], 1, 5);
+                            if (survivorStatus[i] < 0)
+                                survivorStatus[i] = 0;
+                        }
+                        else
+                        {
+                            // --- Normale Checkbox
+                            bool checked = (survivorStatus[i] > 0);
+                            if (ImGui::Checkbox(objective.name.c_str(), &checked))
+                            {
+                                survivorStatus[i] = checked ? 1 : 0;
+                                updated = true;
+                            }
+                        }
+
+                        // --- Tooltip beim Hover
                         if (ImGui::IsItemHovered() && !objective.tooltip.empty())
                             ImGui::SetTooltip("%s", objective.tooltip.c_str());
+
+                        ImGui::PopID();
                     }
                 }
             }
@@ -425,6 +459,7 @@ void gui::Render() noexcept
             if (ImGui::CollapsingHeader("Altruism"))
             {
                 ImGui::ProgressBar(survivorProgressAlturism, ImVec2(0.f, 0.f), survivorProgressAltruismBuffer);
+                ImGui::Separator();
 
                 for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
                 {
@@ -432,10 +467,28 @@ void gui::Render() noexcept
 
                     if (objective.category == "Altruism")
                     {
-                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+                        ImGui::PushID(static_cast<int>(i));
+
+                        if (objective.noCap)
+                        {
+                            updated |= ImGui::InputInt(objective.name.c_str(), &survivorStatus[i], 1, 5);
+                            if (survivorStatus[i] < 0)
+                                survivorStatus[i] = 0;
+                        }
+                        else
+                        {
+                            bool checked = (survivorStatus[i] > 0);
+                            if (ImGui::Checkbox(objective.name.c_str(), &checked))
+                            {
+                                survivorStatus[i] = checked ? 1 : 0;
+                                updated = true;
+                            }
+                        }
 
                         if (ImGui::IsItemHovered() && !objective.tooltip.empty())
                             ImGui::SetTooltip("%s", objective.tooltip.c_str());
+
+                        ImGui::PopID();
                     }
                 }
             }
@@ -444,6 +497,7 @@ void gui::Render() noexcept
             if (ImGui::CollapsingHeader("Boldness"))
             {
                 ImGui::ProgressBar(survivorProgressBoldness, ImVec2(0.f, 0.f), survivorProgressBoldnessBuffer);
+                ImGui::Separator();
 
                 for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
                 {
@@ -451,15 +505,34 @@ void gui::Render() noexcept
 
                     if (objective.category == "Boldness")
                     {
-                        updated |= ImGui::Checkbox(objective.name.c_str(), (bool *)&survivorStatus[i]);
+                        ImGui::PushID(static_cast<int>(i));
+
+                        if (objective.noCap)
+                        {
+                            updated |= ImGui::InputInt(objective.name.c_str(), &survivorStatus[i], 1, 5);
+                            if (survivorStatus[i] < 0)
+                                survivorStatus[i] = 0;
+                        }
+                        else
+                        {
+                            bool checked = (survivorStatus[i] > 0);
+                            if (ImGui::Checkbox(objective.name.c_str(), &checked))
+                            {
+                                survivorStatus[i] = checked ? 1 : 0;
+                                updated = true;
+                            }
+                        }
 
                         if (ImGui::IsItemHovered() && !objective.tooltip.empty())
                             ImGui::SetTooltip("%s", objective.tooltip.c_str());
+
+                        ImGui::PopID();
                     }
                 }
             }
 
             ImGui::Separator();
+
             if (ImGui::CollapsingHeader("Strategies"))
             {
 
@@ -603,6 +676,76 @@ void gui::Render() noexcept
                         }
                     }
                 }
+            }
+
+            // === Offerings Section ===
+            if (ImGui::CollapsingHeader("Offerings"))
+            {
+                static std::vector<int> offeringCounts(DbDOfferings::offerings.size(), 0);
+                static const int maxOfferings = 5;
+                bool offeringChanged = false;
+
+                // --- Vor dem Loop: Anzahl aktuell gesetzter Offerings zählen ---
+                int currentTotalOfferings = 0;
+                for (int count : offeringCounts)
+                    currentTotalOfferings += count;
+
+                for (size_t i = 0; i < DbDOfferings::offerings.size(); ++i)
+                {
+                    ImGui::PushID(static_cast<int>(i));
+
+                    int previousCount = offeringCounts[i];
+                    offeringChanged |= ImGui::InputInt(DbDOfferings::offerings[i].name.c_str(), &offeringCounts[i]);
+
+                    // Check for negative value
+                    if (offeringCounts[i] < 0)
+                        offeringCounts[i] = 0;
+
+                    // Check for exceeding max offerings
+                    currentTotalOfferings = 0;
+                    for (int count : offeringCounts)
+                        currentTotalOfferings += count;
+
+                    if (currentTotalOfferings > maxOfferings)
+                    {
+                        offeringCounts[i] = previousCount;
+                    }
+
+                    // Tooltip
+                    if (ImGui::IsItemHovered() && !DbDOfferings::offerings[i].tooltip.empty())
+                        ImGui::SetTooltip("%s", DbDOfferings::offerings[i].tooltip.c_str());
+
+                    ImGui::PopID();
+                }
+
+                ImGui::Separator();
+
+                if (offeringChanged)
+                {
+                    totalMultiplier = 0.0f;
+
+                    for (size_t i = 0; i < DbDOfferings::offerings.size(); ++i)
+                    {
+                        if (offeringCounts[i] > 0)
+                        {
+                            totalMultiplier += DbDOfferings::offerings[i].multiplier * offeringCounts[i];
+                        }
+                    }
+                }
+
+                // Text aktualisieren
+                static char offeringMultiplierBuffer[32];
+                snprintf(offeringMultiplierBuffer, sizeof(offeringMultiplierBuffer), "Multiplier: x%.2f", totalMultiplier);
+                ImGui::Text("%s", offeringMultiplierBuffer);
+            }
+
+            if (totalMultiplier < 0.1f)
+            {
+                ImGui::Text("Total Bloodpoints: %.0f", totalReached);
+            }
+            else
+            {
+                ImGui::Text("Total Bloodpoints: %.0f", totalReached * totalMultiplier);
             }
 
             ImGui::EndTabItem();
@@ -992,76 +1135,76 @@ void gui::Render() noexcept
             ImGui::EndTabItem();
         }
 
-        ImGui::EndTabBar();
-    }
-
-    // Updating all Progressbars if needed
-    if (updated)
-    {
-        int reachedObjectives = 0;
-        int reachedAltruism = 0;
-        int reachedBoldness = 0;
-        int reachedSurvival = 0;
-
-        // 1x sauber durchgehen
-        for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
+        // Updating all Progressbars if needed
+        if (updated)
         {
-            const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
-            int value = 0;
+            int reachedObjectives = 0;
+            int reachedAltruism = 0;
+            int reachedBoldness = 0;
+            int reachedSurvival = 0;
 
-            if (objective.noCap)
-                value = survivorStatus[i] * static_cast<int>(objective.bloodpoints);
-            else if (survivorStatus[i])
-                value = static_cast<int>(objective.cap);
-
-            if (objective.category == "Objectives")
-                reachedObjectives += value;
-            else if (objective.category == "Altruism")
-                reachedAltruism += value;
-            else if (objective.category == "Boldness")
-                reachedBoldness += value;
-            else if (objective.category == "Survival")
-                reachedSurvival += value;
-        }
-
-        // Strategien anwenden (wenn aktiviert)
-        for (const auto &strat : DbDStrategies::strategies)
-        {
-            if (strat.active)
+            // 1x sauber durchgehen
+            for (size_t i = 0; i < DbDBloodpoints::SurvivorObjectives.size(); ++i)
             {
-                reachedObjectives += strat.objectivesBonus;
-                reachedAltruism += strat.altruismBonus;
-                reachedBoldness += strat.boldnessBonus;
-                reachedSurvival += strat.survivalBonus;
+                const auto &objective = DbDBloodpoints::SurvivorObjectives[i];
+                int value = 0;
+
+                if (objective.noCap)
+                    value = survivorStatus[i] * static_cast<int>(objective.bloodpoints);
+                else if (survivorStatus[i])
+                    value = static_cast<int>(objective.cap);
+
+                if (objective.category == "Objectives")
+                    reachedObjectives += value;
+                else if (objective.category == "Altruism")
+                    reachedAltruism += value;
+                else if (objective.category == "Boldness")
+                    reachedBoldness += value;
+                else if (objective.category == "Survival")
+                    reachedSurvival += value;
             }
+
+            // Strategien anwenden (wenn aktiviert)
+            for (const auto &strat : DbDStrategies::strategies)
+            {
+                if (strat.active)
+                {
+                    reachedObjectives += strat.objectivesBonus;
+                    reachedAltruism += strat.altruismBonus;
+                    reachedBoldness += strat.boldnessBonus;
+                    reachedSurvival += strat.survivalBonus;
+                }
+            }
+
+            // Maximalpunkte aus deiner Bloodpoints.h
+            const float maxPoints = static_cast<float>(DbDBloodpoints::MaxPointsPerCategory);
+
+            survivorProgressObjectives = reachedObjectives / maxPoints;
+            survivorProgressAlturism = reachedAltruism / maxPoints;
+            survivorProgressBoldness = reachedBoldness / maxPoints;
+            survivorProgressSurvival = reachedSurvival / maxPoints;
+
+            int cappedObjectives = reachedObjectives;
+            if (cappedObjectives > DbDBloodpoints::MaxPointsPerCategory)
+                cappedObjectives = DbDBloodpoints::MaxPointsPerCategory;
+
+            int cappedAltruism = reachedAltruism;
+            if (cappedAltruism > DbDBloodpoints::MaxPointsPerCategory)
+                cappedAltruism = DbDBloodpoints::MaxPointsPerCategory;
+
+            int cappedBoldness = reachedBoldness;
+            if (cappedBoldness > DbDBloodpoints::MaxPointsPerCategory)
+                cappedBoldness = DbDBloodpoints::MaxPointsPerCategory;
+
+            int cappedSurvival = reachedSurvival;
+            if (cappedSurvival > DbDBloodpoints::MaxPointsPerCategory)
+                cappedSurvival = DbDBloodpoints::MaxPointsPerCategory;
+
+            totalReached = static_cast<float>(cappedObjectives + cappedAltruism + cappedBoldness + cappedSurvival);
+            survivorProgressTotal = totalReached / (maxPoints * 4.0f);
         }
 
-        // Maximalpunkte aus deiner Bloodpoints.h
-        const float maxPoints = static_cast<float>(DbDBloodpoints::MaxPointsPerCategory);
-
-        survivorProgressObjectives = reachedObjectives / maxPoints;
-        survivorProgressAlturism = reachedAltruism / maxPoints;
-        survivorProgressBoldness = reachedBoldness / maxPoints;
-        survivorProgressSurvival = reachedSurvival / maxPoints;
-
-        int cappedObjectives = reachedObjectives;
-        if (cappedObjectives > DbDBloodpoints::MaxPointsPerCategory)
-            cappedObjectives = DbDBloodpoints::MaxPointsPerCategory;
-
-        int cappedAltruism = reachedAltruism;
-        if (cappedAltruism > DbDBloodpoints::MaxPointsPerCategory)
-            cappedAltruism = DbDBloodpoints::MaxPointsPerCategory;
-
-        int cappedBoldness = reachedBoldness;
-        if (cappedBoldness > DbDBloodpoints::MaxPointsPerCategory)
-            cappedBoldness = DbDBloodpoints::MaxPointsPerCategory;
-
-        int cappedSurvival = reachedSurvival;
-        if (cappedSurvival > DbDBloodpoints::MaxPointsPerCategory)
-            cappedSurvival = DbDBloodpoints::MaxPointsPerCategory;
-
-        float totalReached = static_cast<float>(cappedObjectives + cappedAltruism + cappedBoldness + cappedSurvival);
-        survivorProgressTotal = totalReached / (maxPoints * 4.0f);
+        ImGui::EndTabBar();
     }
 
     ImGui::End();

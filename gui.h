@@ -12,8 +12,8 @@
 namespace gui
 {
     // constant window size
-    constexpr int WIDTH = 400;
-    constexpr int HEIGHT = 500;
+    inline constexpr int WIDTH = 500;
+    inline constexpr int HEIGHT = 600;
 
     inline bool exit = true;
 
