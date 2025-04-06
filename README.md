@@ -45,8 +45,7 @@ All configurations are saved locally in the project folder (“Bloodpoints Calcu
 ## 🗕️ Planned Features
 
 - 🔍 Advanced search for specific bloodpoint sources
-- 🌐 Online strategy sharing
-- ⚙️ Auto-update feature for score events after new DbD patches
+- 💀 New Killer Kategory to maximize the Killer Bloodpoints
 
 ---
 
