@@ -11,6 +11,7 @@
 #include <iomanip>
 
 #include "gui.h"
+#include "resource.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_impl_dx9.h"
@@ -57,6 +58,9 @@ static float totalMultiplier = 0.0f;
 // Updatebool for Progressbar
 bool updated = false;
 
+// Icon
+
+
 namespace fs = std::filesystem;
 
 void ScanStrategies()
@@ -93,6 +97,23 @@ LRESULT __stdcall WindowProcess(
 
     switch (message)
     {
+
+    case WM_CREATE:
+    {
+        HICON hIcon = (HICON)LoadImage(
+            GetModuleHandle(NULL),
+            MAKEINTRESOURCE(IDI_ICON1),
+            IMAGE_ICON,
+            0, 0,
+            LR_DEFAULTSIZE | LR_SHARED
+        );
+
+        if (hIcon)
+        {
+            SendMessage(window, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+            SendMessage(window, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+        }
+    }
 
     case WM_SIZE:
     {

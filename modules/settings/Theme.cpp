@@ -14,7 +14,7 @@ void SetTheme(Theme theme)
         break;
     case Theme::DbD:
     {
-        for (size_t i = 0; i < std::size_t(DbDThemeColors); ++i)
+        for (size_t i = 0; i < size_t(DbDThemeColors); ++i)
         {
             style.Colors[DbDThemeColors[i].index] = DbDThemeColors[i].color;
         }
